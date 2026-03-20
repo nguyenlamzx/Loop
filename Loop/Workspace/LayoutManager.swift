@@ -114,6 +114,12 @@ enum LayoutManager {
         var savedLayouts = Defaults[.savedLayouts]
         savedLayouts.removeAll { $0.id == layoutID }
         Defaults[.savedLayouts] = savedLayouts
+
+        // Also remove from active assignments
+        var activeMap = Defaults[.activeLayoutPerScreen]
+        activeMap = activeMap.filter { $0.value != layoutID.uuidString }
+        Defaults[.activeLayoutPerScreen] = activeMap
+
         log.info("Deleted layout: \(layoutID)")
     }
 
@@ -124,4 +130,64 @@ enum LayoutManager {
             Defaults[.savedLayouts] = savedLayouts
         }
     }
+
+    // MARK: - Screen Assignment
+
+    /// Assigns a layout to a screen. When the screen has an active layout,
+    /// the Loop trigger will show layout zones instead of the radial menu.
+    static func assignLayout(_ layout: SavedLayout, to screen: NSScreen) {
+        var activeMap = Defaults[.activeLayoutPerScreen]
+        activeMap[screen.localizedName] = layout.id.uuidString
+        Defaults[.activeLayoutPerScreen] = activeMap
+        log.success("Assigned layout '\(layout.name)' to screen '\(screen.localizedName)'")
+    }
+
+    /// Removes the layout assignment from a screen.
+    static func unassignLayout(from screen: NSScreen) {
+        var activeMap = Defaults[.activeLayoutPerScreen]
+        activeMap.removeValue(forKey: screen.localizedName)
+        Defaults[.activeLayoutPerScreen] = activeMap
+        log.info("Unassigned layout from screen '\(screen.localizedName)'")
+    }
+
+    /// Returns the active layout for a given screen, if any.
+    static func activeLayout(for screen: NSScreen) -> SavedLayout? {
+        guard Defaults[.enableWorkspaces] else { return nil }
+
+        let activeMap = Defaults[.activeLayoutPerScreen]
+        guard let layoutIDString = activeMap[screen.localizedName] else { return nil }
+
+        return Defaults[.savedLayouts].first { $0.id.uuidString == layoutIDString }
+    }
+
+    // MARK: - Zone Matching
+
+    /// Finds which layout zone contains the given proportional point (0.0-1.0).
+    /// Used by the trigger system to determine which zone the mouse is hovering over.
+    static func zoneContaining(
+        proportionalPoint point: CGPoint,
+        in layout: SavedLayout
+    ) -> LayoutZone? {
+        layout.zones.first { zone in
+            zone.frame.contains(point)
+        }
+    }
+
+    /// Converts a LayoutZone into a WindowAction with a custom frame.
+    /// This allows the zone to work with Loop's existing preview and snap system.
+    static func windowAction(for zone: LayoutZone, at index: Int) -> WindowAction {
+        WindowAction(
+            .custom,
+            keybind: [],
+            name: "Layout Zone \(index + 1)",
+            unit: .percentage,
+            anchor: .topLeft,
+            width: zone.frame.width * 100,
+            height: zone.frame.height * 100,
+            xPoint: zone.frame.minX * 100,
+            yPoint: zone.frame.minY * 100,
+            positionMode: .coordinates
+        )
+    }
 }
+

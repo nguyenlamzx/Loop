@@ -68,22 +68,35 @@ struct LoopApp: App {
                 }
 
                 if !savedLayouts.isEmpty {
-                    Menu("Apply Layout") {
+                    Menu("Apply Layout to Screen") {
                         ForEach(savedLayouts) { layout in
-                            Button("\(layout.name) (\(layout.zoneDescription))") {
-                                DispatchQueue.main.async {
-                                    LayoutOverlayController.shared.show(layout: layout)
+                            Button {
+                                if let screen = NSScreen.screenWithMouse ?? NSScreen.main {
+                                    LayoutManager.assignLayout(layout, to: screen)
+                                }
+                            } label: {
+                                let isActive = isLayoutActive(layout)
+                                if isActive {
+                                    Label("\(layout.name) (\(layout.zoneDescription)) ✓", systemImage: "checkmark")
+                                } else {
+                                    Text("\(layout.name) (\(layout.zoneDescription))")
                                 }
                             }
                         }
 
                         Divider()
 
-                        Menu("Delete Layout") {
-                            ForEach(savedLayouts) { layout in
-                                Button("Delete \(layout.name)") {
-                                    LayoutManager.deleteLayout(id: layout.id)
-                                }
+                        Button("Remove Layout from Screen") {
+                            if let screen = NSScreen.screenWithMouse ?? NSScreen.main {
+                                LayoutManager.unassignLayout(from: screen)
+                            }
+                        }
+                    }
+
+                    Menu("Delete Layout") {
+                        ForEach(savedLayouts) { layout in
+                            Button("Delete \(layout.name)") {
+                                LayoutManager.deleteLayout(id: layout.id)
                             }
                         }
                     }
@@ -123,5 +136,11 @@ struct LoopApp: App {
                 LayoutManager.captureLayout(name: name)
             }
         }
+    }
+
+    private func isLayoutActive(_ layout: SavedLayout) -> Bool {
+        guard let screen = NSScreen.screenWithMouse ?? NSScreen.main else { return false }
+        let activeMap = Defaults[.activeLayoutPerScreen]
+        return activeMap[screen.localizedName] == layout.id.uuidString
     }
 }

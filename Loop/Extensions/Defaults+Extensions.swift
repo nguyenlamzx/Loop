@@ -68,6 +68,8 @@ extension Defaults.Keys {
     static let enableWorkspaces = Key<Bool>("enableWorkspaces", default: false, iCloud: true)
     static let savedWorkspaces = Key<[SavedWorkspace]>("savedWorkspaces", default: [], iCloud: true)
     static let savedLayouts = Key<[SavedLayout]>("savedLayouts", default: [], iCloud: true)
+    /// Maps screen identifier (localizedName) → layout UUID string
+    static let activeLayoutPerScreen = Key<[String: String]>("activeLayoutPerScreen", default: [:], iCloud: true)
 
     // Keybinds
     static let triggerKey = Key<Set<CGKeyCode>>("trigger", default: [.kVK_Function], iCloud: true)

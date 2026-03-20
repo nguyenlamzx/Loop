@@ -114,6 +114,32 @@ final class MouseInteractionObserver {
 
         Task {
             let currentMousePosition = computeLatestMousePosition(event)
+
+            // --- Layout Mode ---
+            // If the current screen has an active layout, match zones by mouse position
+            // instead of using the angle-based radial menu.
+            if let screen = screenBounds.flatMap({ bounds in NSScreen.screens.first(where: { $0.frame == bounds }) }),
+               let activeLayout = LayoutManager.activeLayout(for: screen) {
+
+                let screenFrame = screen.cgSafeScreenFrame
+
+                // Convert mouse position to proportional coordinates (0.0-1.0) within screen
+                let proportionalPoint = CGPoint(
+                    x: (currentMousePosition.x - screenFrame.minX) / screenFrame.width,
+                    y: (currentMousePosition.y - screenFrame.minY) / screenFrame.height
+                )
+
+                if let zone = LayoutManager.zoneContaining(proportionalPoint: proportionalPoint, in: activeLayout),
+                   let index = activeLayout.zones.firstIndex(where: { $0.id == zone.id }) {
+                    let action = LayoutManager.windowAction(for: zone, at: index)
+                    changeAction(action)
+                } else {
+                    changeAction(.init(.noSelection))
+                }
+                return
+            }
+
+            // --- Normal Radial Menu Mode ---
             let angleToMouse = initialMousePosition.angle(to: currentMousePosition) + .radians(.pi / 2)
             let distanceToMouse = initialMousePosition.distance(to: currentMousePosition)
 
