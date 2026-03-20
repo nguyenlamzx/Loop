@@ -193,27 +193,46 @@ final class WindowActionEngine {
     private func handleWorkspaceAction(_ action: WindowAction) -> Result {
         switch action.direction {
         case .saveWorkspace:
-            let name = action.name ?? "Workspace \(DateFormatter.localizedString(from: Date(), dateStyle: .short, timeStyle: .short))"
-            if let workspace = WorkspaceManager.saveCurrentWorkspace(name: name) {
-                log.success("Saved workspace: \(workspace.name)")
-                return .noOp
+            if Defaults[.enableWorkspaces] {
+                // Save as layout (zones only, no app binding)
+                let name = action.name ?? "Layout \(DateFormatter.localizedString(from: Date(), dateStyle: .short, timeStyle: .short))"
+                if let layout = LayoutManager.captureLayout(name: name) {
+                    log.success("Captured layout: \(layout.name)")
+                    return .noOp
+                } else {
+                    log.warn("Failed to capture layout")
+                    return .failed
+                }
             } else {
-                log.warn("Failed to save workspace")
-                return .failed
+                let name = action.name ?? "Workspace \(DateFormatter.localizedString(from: Date(), dateStyle: .short, timeStyle: .short))"
+                if let workspace = WorkspaceManager.saveCurrentWorkspace(name: name) {
+                    log.success("Saved workspace: \(workspace.name)")
+                    return .noOp
+                } else {
+                    log.warn("Failed to save workspace")
+                    return .failed
+                }
             }
 
         case .restoreWorkspace:
-            if let name = action.name,
-               let workspace = Defaults[.savedWorkspaces].first(where: { $0.name == name }) {
-                WorkspaceManager.restoreWorkspace(workspace)
-                return .noOp
-            } else if let workspace = Defaults[.savedWorkspaces].last {
-                // If no name specified, restore the most recently saved workspace
-                WorkspaceManager.restoreWorkspace(workspace)
+            if Defaults[.enableWorkspaces] {
+                // Show layout picker HUD
+                Task { @MainActor in
+                    LayoutPickerController.shared.show()
+                }
                 return .noOp
             } else {
-                log.warn("No workspace found to restore")
-                return .failed
+                if let name = action.name,
+                   let workspace = Defaults[.savedWorkspaces].first(where: { $0.name == name }) {
+                    WorkspaceManager.restoreWorkspace(workspace)
+                    return .noOp
+                } else if let workspace = Defaults[.savedWorkspaces].last {
+                    WorkspaceManager.restoreWorkspace(workspace)
+                    return .noOp
+                } else {
+                    log.warn("No workspace found to restore")
+                    return .failed
+                }
             }
 
         default:
