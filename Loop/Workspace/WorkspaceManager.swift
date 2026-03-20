@@ -119,17 +119,23 @@ enum WorkspaceManager {
 
     /// Restores a saved workspace.
     ///
-    /// - Parameter workspace: The workspace to restore.
+    /// Strategy:
+    /// - **Same screen config**: Uses saved absolute frames directly
+    /// - **Different screen config**: Uses proportional frames to scale to current screen
+    /// - Always sets size before position (sizeFirst) for reliable AX behavior
+    /// - Verifies each window's actual frame after setting it
     static func restoreWorkspace(_ workspace: SavedWorkspace) {
         let currentConfigHash = currentScreenConfigurationHash()
-        let needsProportionalScaling = workspace.screenConfigurationHash != currentConfigHash
+        let sameScreenConfig = workspace.screenConfigurationHash == currentConfigHash
 
-        if needsProportionalScaling {
-            log.info("Screen configuration changed, using proportional scaling for restore")
-        }
+        log.info("Restoring workspace '\(workspace.name)' (\(workspace.windows.count) windows)")
+        log.info("Screen config: \(sameScreenConfig ? "SAME" : "CHANGED") (saved: \(workspace.screenConfigurationHash), current: \(currentConfigHash))")
 
         let currentWindows = WindowUtility.windowList()
+        log.info("Available windows: \(currentWindows.count)")
+
         var matchedWindowIDs: Set<CGWindowID> = []
+        var restoredCount = 0
 
         for entry in workspace.windows {
             // Find matching window
@@ -138,9 +144,7 @@ enum WorkspaceManager {
                 from: currentWindows,
                 excluding: matchedWindowIDs
             ) else {
-                log.info("No matching window found for \(entry.bundleIdentifier) (\(entry.appName ?? "unknown"))")
-
-                // Try to launch the app
+                log.info("⚠️ No match for '\(entry.appName ?? entry.bundleIdentifier)' (\(entry.windowTitle ?? "no title"))")
                 launchApp(bundleIdentifier: entry.bundleIdentifier)
                 continue
             }
@@ -150,9 +154,13 @@ enum WorkspaceManager {
             // Calculate target frame
             let targetFrame: CGRect
 
-            if needsProportionalScaling {
-                // Use proportional frame relative to current screen
+            if sameScreenConfig {
+                // Same screen layout → use absolute frame directly
+                targetFrame = entry.frame
+            } else {
+                // Screen changed → use proportional frame
                 guard let screen = ScreenUtility.screenContaining(matchedWindow) ?? NSScreen.main else {
+                    log.info("⚠️ Cannot find screen for \(matchedWindow.description)")
                     continue
                 }
 
@@ -163,15 +171,26 @@ enum WorkspaceManager {
                     width: entry.proportionalFrame.width * screenFrame.width,
                     height: entry.proportionalFrame.height * screenFrame.height
                 )
-            } else {
-                targetFrame = entry.frame
             }
 
-            log.info("Restoring \(matchedWindow.description) to \(targetFrame)")
-            matchedWindow.setFrame(targetFrame)
+            let currentFrame = matchedWindow.frame
+            log.info("Restoring '\(entry.appName ?? entry.bundleIdentifier)': \(currentFrame) → \(targetFrame)")
+
+            // Set frame with sizeFirst=true for reliable positioning
+            matchedWindow.setFrame(targetFrame, sizeFirst: true)
+
+            // Verify the result
+            let actualFrame = matchedWindow.frame
+            if !actualFrame.approximatelyEqual(to: targetFrame, tolerance: 5) {
+                log.info("⚠️ Frame mismatch after setFrame: expected \(targetFrame), got \(actualFrame)")
+                // Try once more — some apps need a second attempt
+                matchedWindow.setFrame(targetFrame, sizeFirst: true)
+            }
+
+            restoredCount += 1
         }
 
-        log.success("Restored workspace '\(workspace.name)'")
+        log.success("Restored workspace '\(workspace.name)': \(restoredCount)/\(workspace.windows.count) windows")
     }
 
     // MARK: - CRUD
