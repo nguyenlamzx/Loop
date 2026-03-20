@@ -62,14 +62,19 @@ struct LoopApp: App {
                 Divider()
 
                 Button("Save Workspace…") {
-                    promptAndSaveWorkspace()
+                    // Dispatch async so the menu closes before the dialog appears
+                    DispatchQueue.main.async {
+                        promptAndSaveWorkspace()
+                    }
                 }
 
                 if !savedWorkspaces.isEmpty {
                     Menu("Restore Workspace") {
                         ForEach(savedWorkspaces) { workspace in
                             Button("\(workspace.name) (\(workspace.windows.count) windows)") {
-                                WorkspaceManager.restoreWorkspace(workspace)
+                                DispatchQueue.main.async {
+                                    WorkspaceManager.restoreWorkspace(workspace)
+                                }
                             }
                         }
                     }
@@ -87,6 +92,9 @@ struct LoopApp: App {
     }
 
     private func promptAndSaveWorkspace() {
+        // Activate our app so the dialog appears in front
+        NSApp.activate(ignoringOtherApps: true)
+
         let alert = NSAlert()
         alert.messageText = "Save Workspace"
         alert.informativeText = "Enter a name for this workspace layout:"
