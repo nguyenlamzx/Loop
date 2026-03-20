@@ -119,17 +119,14 @@ enum WorkspaceManager {
 
     /// Restores a saved workspace.
     ///
-    /// Strategy:
-    /// - **Same screen config**: Uses saved absolute frames directly
-    /// - **Different screen config**: Uses proportional frames to scale to current screen
-    /// - Always sets size before position (sizeFirst) for reliable AX behavior
-    /// - Verifies each window's actual frame after setting it
+    /// Always uses **proportional frames** to calculate target positions:
+    /// - On same screen: proportional × screen size ≈ original absolute position (< 1px diff)
+    /// - On different resolution: automatically scales correctly
+    /// - Eliminates need for screen config hash comparison
+    ///
+    /// Uses sizeFirst=true for reliable AX behavior, with retry on mismatch.
     static func restoreWorkspace(_ workspace: SavedWorkspace) {
-        let currentConfigHash = currentScreenConfigurationHash()
-        let sameScreenConfig = workspace.screenConfigurationHash == currentConfigHash
-
         log.info("Restoring workspace '\(workspace.name)' (\(workspace.windows.count) windows)")
-        log.info("Screen config: \(sameScreenConfig ? "SAME" : "CHANGED") (saved: \(workspace.screenConfigurationHash), current: \(currentConfigHash))")
 
         let currentWindows = WindowUtility.windowList()
         log.info("Available windows: \(currentWindows.count)")
@@ -151,27 +148,19 @@ enum WorkspaceManager {
 
             matchedWindowIDs.insert(matchedWindow.cgWindowID)
 
-            // Calculate target frame
-            let targetFrame: CGRect
-
-            if sameScreenConfig {
-                // Same screen layout → use absolute frame directly
-                targetFrame = entry.frame
-            } else {
-                // Screen changed → use proportional frame
-                guard let screen = ScreenUtility.screenContaining(matchedWindow) ?? NSScreen.main else {
-                    log.info("⚠️ Cannot find screen for \(matchedWindow.description)")
-                    continue
-                }
-
-                let screenFrame = screen.cgSafeScreenFrame
-                targetFrame = CGRect(
-                    x: screenFrame.minX + entry.proportionalFrame.minX * screenFrame.width,
-                    y: screenFrame.minY + entry.proportionalFrame.minY * screenFrame.height,
-                    width: entry.proportionalFrame.width * screenFrame.width,
-                    height: entry.proportionalFrame.height * screenFrame.height
-                )
+            // Always use proportional frame → works across any resolution
+            guard let screen = ScreenUtility.screenContaining(matchedWindow) ?? NSScreen.main else {
+                log.info("⚠️ Cannot find screen for \(matchedWindow.description)")
+                continue
             }
+
+            let screenFrame = screen.cgSafeScreenFrame
+            let targetFrame = CGRect(
+                x: screenFrame.minX + entry.proportionalFrame.minX * screenFrame.width,
+                y: screenFrame.minY + entry.proportionalFrame.minY * screenFrame.height,
+                width: entry.proportionalFrame.width * screenFrame.width,
+                height: entry.proportionalFrame.height * screenFrame.height
+            )
 
             let currentFrame = matchedWindow.frame
             log.info("Restoring '\(entry.appName ?? entry.bundleIdentifier)': \(currentFrame) → \(targetFrame)")
@@ -182,8 +171,7 @@ enum WorkspaceManager {
             // Verify the result
             let actualFrame = matchedWindow.frame
             if !actualFrame.approximatelyEqual(to: targetFrame, tolerance: 5) {
-                log.info("⚠️ Frame mismatch after setFrame: expected \(targetFrame), got \(actualFrame)")
-                // Try once more — some apps need a second attempt
+                log.info("⚠️ Frame mismatch: expected \(targetFrame), got \(actualFrame) — retrying")
                 matchedWindow.setFrame(targetFrame, sizeFirst: true)
             }
 
