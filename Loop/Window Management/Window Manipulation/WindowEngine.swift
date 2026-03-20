@@ -106,10 +106,13 @@ enum WindowEngine {
             )
 
             // Resize adjacent windows if the feature is enabled
+            // Use targetFrame (or systemWMFrame if available) as the definitive new frame,
+            // since window.frame may not have updated yet after async/animated resize
+            let effectiveNewFrame = systemWMFrame ?? targetFrame
             AdjacentWindowManager.resizeAdjacentWindows(
                 resizedWindow: window,
                 oldFrame: oldFrame,
-                newFrame: window.frame,
+                newFrame: effectiveNewFrame,
                 screen: screen
             )
         }

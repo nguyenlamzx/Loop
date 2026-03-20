@@ -48,7 +48,13 @@ enum AdjacentWindowManager {
         guard Defaults[.resizeAdjacentWindows] else { return }
 
         // Skip if the frame didn't actually change
-        guard !oldFrame.approximatelyEqual(to: newFrame) else { return }
+        guard !oldFrame.approximatelyEqual(to: newFrame) else {
+            log.info("Adjacent: Skipping — frame didn't change (old: \(oldFrame), new: \(newFrame))")
+            return
+        }
+
+        log.info("Adjacent: Checking for windows adjacent to \(resizedWindow.description)")
+        log.info("Adjacent: oldFrame=\(oldFrame) → newFrame=\(newFrame)")
 
         let tolerance = Defaults[.adjacentResizeTolerance]
 
@@ -58,6 +64,8 @@ enum AdjacentWindowManager {
                 && StashManager.shared.getRevealedFrameForStashedWindow(id: window.cgWindowID) == nil
         }
 
+        log.info("Adjacent: Found \(allWindows.count) candidate windows (tolerance: \(tolerance))")
+
         // Use the OLD frame to detect adjacency (before the resize happened)
         let adjacentEdges = AdjacentWindowDetector.findAdjacentWindows(
             targetFrame: oldFrame,
@@ -66,7 +74,10 @@ enum AdjacentWindowManager {
             tolerance: tolerance
         )
 
-        guard !adjacentEdges.isEmpty else { return }
+        guard !adjacentEdges.isEmpty else {
+            log.info("Adjacent: No adjacent windows found")
+            return
+        }
         log.info("Adjusting \(adjacentEdges.count) adjacent window(s) after resize of \(resizedWindow.description)")
 
         let screenBounds = screen.cgSafeScreenFrame
