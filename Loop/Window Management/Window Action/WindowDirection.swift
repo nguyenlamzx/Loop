@@ -68,6 +68,10 @@ enum WindowDirection: String, CaseIterable, Identifiable, Codable {
     case stash = "Stash"
     case unstash = "Unstash"
 
+    // Workspace
+    case saveWorkspace = "SaveWorkspace"
+    case restoreWorkspace = "RestoreWorkspace"
+
     /// Custom Actions
     case custom = "Custom", cycle = "Cycle"
 
@@ -84,10 +88,12 @@ enum WindowDirection: String, CaseIterable, Identifiable, Codable {
     static var grow: [WindowDirection] { [.growTop, .growBottom, .growRight, .growLeft, .growHorizontal, .growVertical] }
     static var move: [WindowDirection] { [.moveUp, .moveDown, .moveRight, .moveLeft] }
     static var focus: [WindowDirection] { [.focusUp, .focusDown, .focusRight, .focusLeft, .focusNextInStack] }
+    static var workspace: [WindowDirection] { [.saveWorkspace, .restoreWorkspace] }
     static var more: [WindowDirection] { [.initialFrame, .undo, .custom, .cycle] }
 
     // Computed properties for checking conditions
     var isNoOp: Bool { [.noSelection, .noAction].contains(self) }
+    var isWorkspaceAction: Bool { WindowDirection.workspace.contains(self) }
     var willChangeScreen: Bool { WindowDirection.screenSwitching.contains(self) }
     var willAdjustSize: Bool { WindowDirection.sizeAdjustment.contains(self) }
     var willShrink: Bool { WindowDirection.shrink.contains(self) }

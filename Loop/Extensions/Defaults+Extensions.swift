@@ -60,6 +60,14 @@ extension Defaults.Keys {
     static let shiftFocusWhenStashed = Key<Bool>("shiftFocusWhenStashed", default: true, iCloud: true)
     static let cycleModeRestartEnabled = Key<Bool>("cycleModeRestartEnabled", default: false, iCloud: true)
 
+    // Adjacent Windows
+    static let resizeAdjacentWindows = Key<Bool>("resizeAdjacentWindows", default: false, iCloud: true)
+    static let adjacentResizeTolerance = Key<CGFloat>("adjacentResizeTolerance", default: 5, iCloud: true)
+
+    // Workspace
+    static let enableWorkspaces = Key<Bool>("enableWorkspaces", default: false, iCloud: true)
+    static let savedWorkspaces = Key<[SavedWorkspace]>("savedWorkspaces", default: [], iCloud: true)
+
     // Keybinds
     static let triggerKey = Key<Set<CGKeyCode>>("trigger", default: [.kVK_Function], iCloud: true)
     static let sideDependentTriggerKey = Key<Bool>("sideDependentTriggerKey", default: true, iCloud: true)

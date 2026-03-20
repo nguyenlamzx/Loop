@@ -165,6 +165,10 @@ extension WindowDirection {
             String(localized: "Stash", comment: "Window action")
         case .unstash:
             String(localized: "Unstash", comment: "Window action")
+        case .saveWorkspace:
+            String(localized: "Save Workspace", comment: "Window action")
+        case .restoreWorkspace:
+            String(localized: "Restore Workspace", comment: "Window action")
         case .custom:
             String(localized: "Custom", comment: "Window action")
         case .cycle:

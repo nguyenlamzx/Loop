@@ -109,6 +109,11 @@ final class WindowActionEngine {
             return handleFocusAction(context.action, currentWindow: context.window)
         }
 
+        // Workspace actions: save/restore workspace
+        if direction.isWorkspaceAction {
+            return handleWorkspaceAction(context.action)
+        }
+
         // Quick actions that don't require resize logic
         if let result = handleQuickAction(context.action, window: context.window) {
             return result
@@ -180,6 +185,39 @@ final class WindowActionEngine {
 
         for window in windowsToMinimize {
             window.minimized = true
+        }
+    }
+
+    // MARK: - Workspace Actions
+
+    private func handleWorkspaceAction(_ action: WindowAction) -> Result {
+        switch action.direction {
+        case .saveWorkspace:
+            let name = action.name ?? "Workspace \(DateFormatter.localizedString(from: Date(), dateStyle: .short, timeStyle: .short))"
+            if let workspace = WorkspaceManager.saveCurrentWorkspace(name: name) {
+                log.success("Saved workspace: \(workspace.name)")
+                return .noOp
+            } else {
+                log.warn("Failed to save workspace")
+                return .failed
+            }
+
+        case .restoreWorkspace:
+            if let name = action.name,
+               let workspace = Defaults[.savedWorkspaces].first(where: { $0.name == name }) {
+                WorkspaceManager.restoreWorkspace(workspace)
+                return .noOp
+            } else if let workspace = Defaults[.savedWorkspaces].last {
+                // If no name specified, restore the most recently saved workspace
+                WorkspaceManager.restoreWorkspace(workspace)
+                return .noOp
+            } else {
+                log.warn("No workspace found to restore")
+                return .failed
+            }
+
+        default:
+            return .noOp
         }
     }
 }

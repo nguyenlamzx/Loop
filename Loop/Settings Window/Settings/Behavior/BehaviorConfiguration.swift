@@ -31,7 +31,15 @@ struct BehaviorConfigurationView: View {
     @Default(.animateStashedWindows) var animateStashedWindows
     @Default(.shiftFocusWhenStashed) var shiftFocusWhenStashed
 
+    // Adjacent Windows
+    @Default(.resizeAdjacentWindows) var resizeAdjacentWindows
+    @Default(.adjacentResizeTolerance) var adjacentResizeTolerance
+
+    // Workspace
+    @Default(.enableWorkspaces) var enableWorkspaces
+
     @State private var isPaddingConfigurationViewPresented = false
+    @State private var isWorkspaceManageViewPresented = false
 
     var body: some View {
         Group {
@@ -39,6 +47,8 @@ struct BehaviorConfigurationView: View {
             windowSection
             cursorSection
             windowSnappingSection
+            adjacentWindowsSection
+            workspaceSection
             stageManagerSection
             stashSection
         }
@@ -47,7 +57,9 @@ struct BehaviorConfigurationView: View {
             value: [
                 resizeWindowUnderCursor,
                 windowSnapping,
-                respectStageManager
+                respectStageManager,
+                resizeAdjacentWindows,
+                enableWorkspaces
             ]
         )
     }
@@ -173,6 +185,52 @@ struct BehaviorConfigurationView: View {
         }
         .onChange(of: stashedWindowVisiblePadding) { _ in
             StashManager.shared.onConfigurationChanged()
+        }
+    }
+
+    private var adjacentWindowsSection: some View {
+        LuminareSection(String(localized: "Adjacent Windows", comment: "Section header shown in settings")) {
+            LuminareToggle(isOn: $resizeAdjacentWindows) {
+                Text("Resize adjacent windows")
+                    .padding(.trailing, 4)
+                    .luminareToolTip(attachedTo: .topTrailing) {
+                        Text("When resizing a window with Loop, adjacent windows\nsharing a border will automatically resize to match.")
+                            .padding(6)
+                    }
+            }
+
+            if resizeAdjacentWindows {
+                LuminareSlider(
+                    String(localized: "Edge tolerance", comment: "Max distance between edges to consider windows adjacent"),
+                    value: $adjacentResizeTolerance.doubleBinding,
+                    in: 1...20,
+                    format: .number.precision(.fractionLength(0...0)),
+                    clampsUpper: false,
+                    suffix: Text("px", comment: "Unit symbol: pixels")
+                )
+            }
+        }
+    }
+
+    private var workspaceSection: some View {
+        LuminareSection(String(localized: "Workspace", comment: "Section header shown in settings")) {
+            LuminareToggle(isOn: $enableWorkspaces) {
+                Text("Enable workspaces")
+                    .padding(.trailing, 4)
+                    .luminareToolTip(attachedTo: .topTrailing) {
+                        Text("Save and restore window layouts.\nConfigure workspace hotkeys in the Keybinds tab.")
+                            .padding(6)
+                    }
+            }
+
+            if enableWorkspaces {
+                LuminareButton("Workspaces", "Manage…") {
+                    isWorkspaceManageViewPresented = true
+                }
+                .luminareModalWithPredefinedSheetStyle(isPresented: $isWorkspaceManageViewPresented, isCompact: false) {
+                    WorkspaceConfigurationView(isPresented: $isWorkspaceManageViewPresented)
+                }
+            }
         }
     }
 }

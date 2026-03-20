@@ -30,6 +30,7 @@ enum WindowEngine {
 
         let willChangeScreens = ScreenUtility.screenContaining(window) != context.screen
         let targetFrame = context.getTargetFrame().padded
+        let oldFrame = window.frame  // Capture frame before resize for adjacent window detection
         log.info("Resizing \(window) to \(targetFrame)")
 
         // Record first frame if needed
@@ -101,6 +102,14 @@ enum WindowEngine {
             StashManager.shared.onWindowResized(
                 action: context.action,
                 window: window,
+                screen: screen
+            )
+
+            // Resize adjacent windows if the feature is enabled
+            AdjacentWindowManager.resizeAdjacentWindows(
+                resizedWindow: window,
+                oldFrame: oldFrame,
+                newFrame: window.frame,
                 screen: screen
             )
         }
