@@ -28,40 +28,6 @@ struct WorkspaceWindowEntry: Codable, Defaults.Serializable, Hashable {
 
     /// The name of the application for display purposes
     let appName: String?
-
-    /// Whether the window was minimized when the workspace was saved
-    let isMinimized: Bool
-
-    /// Custom decoder for backward compatibility — old workspaces without isMinimized
-    /// will decode with isMinimized = false
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        bundleIdentifier = try container.decode(String.self, forKey: .bundleIdentifier)
-        windowTitle = try container.decodeIfPresent(String.self, forKey: .windowTitle)
-        frame = try container.decode(CGRect.self, forKey: .frame)
-        proportionalFrame = try container.decode(CGRect.self, forKey: .proportionalFrame)
-        screenIdentifier = try container.decode(String.self, forKey: .screenIdentifier)
-        appName = try container.decodeIfPresent(String.self, forKey: .appName)
-        isMinimized = try container.decodeIfPresent(Bool.self, forKey: .isMinimized) ?? false
-    }
-
-    init(
-        bundleIdentifier: String,
-        windowTitle: String?,
-        frame: CGRect,
-        proportionalFrame: CGRect,
-        screenIdentifier: String,
-        appName: String?,
-        isMinimized: Bool = false
-    ) {
-        self.bundleIdentifier = bundleIdentifier
-        self.windowTitle = windowTitle
-        self.frame = frame
-        self.proportionalFrame = proportionalFrame
-        self.screenIdentifier = screenIdentifier
-        self.appName = appName
-        self.isMinimized = isMinimized
-    }
 }
 
 /// Represents a complete workspace layout
@@ -73,7 +39,6 @@ struct SavedWorkspace: Codable, Identifiable, Hashable, Defaults.Serializable {
     var createdAt: Date
 
     /// Hash of the screen configuration when workspace was saved
-    /// Used to detect if monitors have changed and proportional scaling is needed
     var screenConfigurationHash: String
 
     init(
