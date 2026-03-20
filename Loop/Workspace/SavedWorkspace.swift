@@ -31,6 +31,37 @@ struct WorkspaceWindowEntry: Codable, Defaults.Serializable, Hashable {
 
     /// Whether the window was minimized when the workspace was saved
     let isMinimized: Bool
+
+    /// Custom decoder for backward compatibility — old workspaces without isMinimized
+    /// will decode with isMinimized = false
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        bundleIdentifier = try container.decode(String.self, forKey: .bundleIdentifier)
+        windowTitle = try container.decodeIfPresent(String.self, forKey: .windowTitle)
+        frame = try container.decode(CGRect.self, forKey: .frame)
+        proportionalFrame = try container.decode(CGRect.self, forKey: .proportionalFrame)
+        screenIdentifier = try container.decode(String.self, forKey: .screenIdentifier)
+        appName = try container.decodeIfPresent(String.self, forKey: .appName)
+        isMinimized = try container.decodeIfPresent(Bool.self, forKey: .isMinimized) ?? false
+    }
+
+    init(
+        bundleIdentifier: String,
+        windowTitle: String?,
+        frame: CGRect,
+        proportionalFrame: CGRect,
+        screenIdentifier: String,
+        appName: String?,
+        isMinimized: Bool = false
+    ) {
+        self.bundleIdentifier = bundleIdentifier
+        self.windowTitle = windowTitle
+        self.frame = frame
+        self.proportionalFrame = proportionalFrame
+        self.screenIdentifier = screenIdentifier
+        self.appName = appName
+        self.isMinimized = isMinimized
+    }
 }
 
 /// Represents a complete workspace layout

@@ -159,11 +159,20 @@ enum WorkspaceManager {
     ///
     /// Uses proportional frames for cross-resolution compatibility.
     static func restoreWorkspace(_ workspace: SavedWorkspace) {
+        NSLog("[Workspace] Restoring '\(workspace.name)' (\(workspace.windows.count) windows)")
         log.info("Restoring workspace '\(workspace.name)' (\(workspace.windows.count) windows)")
+
+        // Log each entry's saved state
+        for (i, entry) in workspace.windows.enumerated() {
+            NSLog("[Workspace] Entry[\(i)]: \(entry.appName ?? entry.bundleIdentifier) isMinimized=\(entry.isMinimized) title='\(entry.windowTitle ?? "nil")'")
+        }
 
         // Get ALL windows including minimized for matching
         let allWindows = getAllWindows()
-        log.info("Available windows: \(allWindows.count) (visible + minimized)")
+        NSLog("[Workspace] Found \(allWindows.count) windows (visible + minimized)")
+        for (window, isMin) in allWindows {
+            NSLog("[Workspace]   - \(window.nsRunningApplication?.localizedName ?? "?") minimized=\(isMin) title='\(window.title ?? "nil")' id=\(window.cgWindowID)")
+        }
 
         var matchedWindowIDs: Set<CGWindowID> = []
         var restoredCount = 0
@@ -175,25 +184,26 @@ enum WorkspaceManager {
                 from: allWindows,
                 excluding: matchedWindowIDs
             ) else {
-                log.info("⚠️ No match for '\(entry.appName ?? entry.bundleIdentifier)' (\(entry.windowTitle ?? "no title"))")
+                NSLog("[Workspace] ⚠️ No match for '\(entry.appName ?? entry.bundleIdentifier)'")
                 launchApp(bundleIdentifier: entry.bundleIdentifier)
                 continue
             }
 
             matchedWindowIDs.insert(matchedWindow.cgWindowID)
+            NSLog("[Workspace] Matched '\(entry.appName ?? entry.bundleIdentifier)': entry.isMinimized=\(entry.isMinimized), currentlyMinimized=\(currentlyMinimized)")
 
             if entry.isMinimized {
                 // Window should be minimized in this workspace
                 if !currentlyMinimized {
-                    log.info("Minimizing '\(entry.appName ?? entry.bundleIdentifier)'")
+                    NSLog("[Workspace] → MINIMIZING '\(entry.appName ?? entry.bundleIdentifier)'")
                     matchedWindow.minimized = true
                 } else {
-                    log.info("Already minimized: '\(entry.appName ?? entry.bundleIdentifier)'")
+                    NSLog("[Workspace] → Already minimized: '\(entry.appName ?? entry.bundleIdentifier)'")
                 }
             } else {
                 // Window should be visible in this workspace
                 if currentlyMinimized {
-                    log.info("Unminimizing '\(entry.appName ?? entry.bundleIdentifier)'")
+                    NSLog("[Workspace] → UNMINIMIZING '\(entry.appName ?? entry.bundleIdentifier)'")
                     matchedWindow.minimized = false
                     // Small delay for window to appear on screen before setting frame
                     usleep(200_000) // 200ms
@@ -210,15 +220,13 @@ enum WorkspaceManager {
                     height: entry.proportionalFrame.height * screenFrame.height
                 )
 
-                let currentFrame = matchedWindow.frame
-                log.info("Restoring '\(entry.appName ?? entry.bundleIdentifier)': \(currentFrame) → \(targetFrame)")
-
+                NSLog("[Workspace] → Setting frame: \(targetFrame)")
                 matchedWindow.setFrame(targetFrame, sizeFirst: true)
 
                 // Verify and retry
                 let actualFrame = matchedWindow.frame
                 if !actualFrame.approximatelyEqual(to: targetFrame, tolerance: 5) {
-                    log.info("⚠️ Frame mismatch: expected \(targetFrame), got \(actualFrame) — retrying")
+                    NSLog("[Workspace] ⚠️ Frame mismatch: expected \(targetFrame), got \(actualFrame) — retrying")
                     matchedWindow.setFrame(targetFrame, sizeFirst: true)
                 }
             }
@@ -226,7 +234,7 @@ enum WorkspaceManager {
             restoredCount += 1
         }
 
-        log.success("Restored workspace '\(workspace.name)': \(restoredCount)/\(workspace.windows.count) windows")
+        NSLog("[Workspace] ✅ Restored '\(workspace.name)': \(restoredCount)/\(workspace.windows.count) windows")
     }
 
     // MARK: - CRUD
