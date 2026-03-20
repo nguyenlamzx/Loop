@@ -28,6 +28,12 @@ enum WorkspaceManager {
             return nil
         }
 
+        // Only save windows on the focused screen (screen with mouse cursor)
+        guard let focusedScreen = NSScreen.screenWithMouse ?? NSScreen.main else {
+            log.info("No screen found")
+            return nil
+        }
+
         let windows = WindowUtility.windowList()
         guard !windows.isEmpty else {
             log.info("No windows found to save")
@@ -35,6 +41,7 @@ enum WorkspaceManager {
         }
 
         let screenConfigHash = currentScreenConfigurationHash()
+        let screenFrame = focusedScreen.cgSafeScreenFrame
         var entries: [WorkspaceWindowEntry] = []
 
         for window in windows {
@@ -47,12 +54,13 @@ enum WorkspaceManager {
                 continue
             }
 
-            guard let screen = ScreenUtility.screenContaining(window) ?? NSScreen.main else {
+            // Only include windows on the focused screen
+            guard let windowScreen = ScreenUtility.screenContaining(window),
+                  windowScreen.isSameScreen(focusedScreen) else {
                 continue
             }
 
             let frame = window.frame
-            let screenFrame = screen.cgSafeScreenFrame
 
             // Calculate proportional frame relative to screen bounds
             let proportionalFrame = CGRect(
@@ -67,7 +75,7 @@ enum WorkspaceManager {
                 windowTitle: window.title,
                 frame: frame,
                 proportionalFrame: proportionalFrame,
-                screenIdentifier: screen.localizedName,
+                screenIdentifier: focusedScreen.localizedName,
                 appName: window.nsRunningApplication?.localizedName
             )
 
@@ -75,7 +83,7 @@ enum WorkspaceManager {
         }
 
         guard !entries.isEmpty else {
-            log.info("No valid window entries to save")
+            log.info("No windows found on focused screen")
             return nil
         }
 
@@ -89,7 +97,7 @@ enum WorkspaceManager {
         savedWorkspaces.append(workspace)
         Defaults[.savedWorkspaces] = savedWorkspaces
 
-        log.success("Saved workspace '\(name)' with \(entries.count) windows")
+        log.success("Saved workspace '\(name)' with \(entries.count) windows on '\(focusedScreen.localizedName)'")
         return workspace
     }
 
