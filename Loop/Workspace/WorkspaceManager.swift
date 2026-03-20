@@ -24,6 +24,11 @@ enum WorkspaceManager {
 
     /// Saves the current window layout as a named workspace.
     ///
+    /// Captures **all** windows including minimized ones. For each window, saves:
+    /// - Frame and proportional frame (for visible windows)
+    /// - `isMinimized` flag
+    /// - For minimized windows: uses their pre-minimize frame if available
+    ///
     /// - Parameter name: The name for the workspace.
     /// - Returns: The created `SavedWorkspace`, or `nil` if no windows were found.
     @discardableResult
@@ -33,16 +38,18 @@ enum WorkspaceManager {
             return nil
         }
 
-        let windows = WindowUtility.windowList()
-        guard !windows.isEmpty else {
+        let screenConfigHash = currentScreenConfigurationHash()
+        var entries: [WorkspaceWindowEntry] = []
+
+        // Get ALL windows (visible + minimized) via AXUIElement per running app
+        let allWindows = getAllWindows()
+
+        guard !allWindows.isEmpty else {
             log.info("No windows found to save")
             return nil
         }
 
-        let screenConfigHash = currentScreenConfigurationHash()
-        var entries: [WorkspaceWindowEntry] = []
-
-        for window in windows {
+        for (window, isMinimized) in allWindows {
             guard let bundleIdentifier = window.nsRunningApplication?.bundleIdentifier else {
                 continue
             }
@@ -52,20 +59,41 @@ enum WorkspaceManager {
                 continue
             }
 
-            guard let screen = ScreenUtility.screenContaining(window) ?? NSScreen.main else {
-                continue
+            let frame = window.frame
+            let screen: NSScreen
+
+            if isMinimized {
+                // Minimized windows might not be on any screen,
+                // use main screen for proportional calculation
+                screen = NSScreen.main ?? NSScreen.screens[0]
+            } else {
+                guard let s = ScreenUtility.screenContaining(window) ?? NSScreen.main else {
+                    continue
+                }
+                screen = s
             }
 
-            let frame = window.frame
             let screenFrame = screen.cgSafeScreenFrame
 
             // Calculate proportional frame relative to screen bounds
-            let proportionalFrame = CGRect(
-                x: (frame.minX - screenFrame.minX) / screenFrame.width,
-                y: (frame.minY - screenFrame.minY) / screenFrame.height,
-                width: frame.width / screenFrame.width,
-                height: frame.height / screenFrame.height
-            )
+            let proportionalFrame: CGRect
+            if frame.width > 0 && frame.height > 0 && !isMinimized {
+                proportionalFrame = CGRect(
+                    x: (frame.minX - screenFrame.minX) / screenFrame.width,
+                    y: (frame.minY - screenFrame.minY) / screenFrame.height,
+                    width: frame.width / screenFrame.width,
+                    height: frame.height / screenFrame.height
+                )
+            } else {
+                // Minimized window: frame may be zero/stale, store as-is
+                // When restored and unminimized, frame will be set from saved proportional
+                proportionalFrame = CGRect(
+                    x: (frame.minX - screenFrame.minX) / screenFrame.width,
+                    y: (frame.minY - screenFrame.minY) / screenFrame.height,
+                    width: max(0.2, frame.width / screenFrame.width),
+                    height: max(0.2, frame.height / screenFrame.height)
+                )
+            }
 
             let entry = WorkspaceWindowEntry(
                 bundleIdentifier: bundleIdentifier,
@@ -73,10 +101,13 @@ enum WorkspaceManager {
                 frame: frame,
                 proportionalFrame: proportionalFrame,
                 screenIdentifier: screen.localizedName,
-                appName: window.nsRunningApplication?.localizedName
+                appName: window.nsRunningApplication?.localizedName,
+                isMinimized: isMinimized
             )
 
             entries.append(entry)
+            let state = isMinimized ? "minimized" : "visible"
+            log.info("Captured [\(state)] \(entry.appName ?? bundleIdentifier): \(frame)")
         }
 
         guard !entries.isEmpty else {
@@ -94,7 +125,9 @@ enum WorkspaceManager {
         savedWorkspaces.append(workspace)
         Defaults[.savedWorkspaces] = savedWorkspaces
 
-        log.success("Saved workspace '\(name)' with \(entries.count) windows")
+        let visibleCount = entries.filter { !$0.isMinimized }.count
+        let minimizedCount = entries.filter { $0.isMinimized }.count
+        log.success("Saved workspace '\(name)': \(visibleCount) visible + \(minimizedCount) minimized windows")
         return workspace
     }
 
@@ -119,26 +152,27 @@ enum WorkspaceManager {
 
     /// Restores a saved workspace.
     ///
-    /// Always uses **proportional frames** to calculate target positions:
-    /// - On same screen: proportional × screen size ≈ original absolute position (< 1px diff)
-    /// - On different resolution: automatically scales correctly
-    /// - Eliminates need for screen config hash comparison
+    /// Handles minimize/unminimize transitions:
+    /// - If saved as minimized → minimize the window
+    /// - If saved as visible but currently minimized → unminimize, then set frame
+    /// - If saved as visible and currently visible → just set frame
     ///
-    /// Uses sizeFirst=true for reliable AX behavior, with retry on mismatch.
+    /// Uses proportional frames for cross-resolution compatibility.
     static func restoreWorkspace(_ workspace: SavedWorkspace) {
         log.info("Restoring workspace '\(workspace.name)' (\(workspace.windows.count) windows)")
 
-        let currentWindows = WindowUtility.windowList()
-        log.info("Available windows: \(currentWindows.count)")
+        // Get ALL windows including minimized for matching
+        let allWindows = getAllWindows()
+        log.info("Available windows: \(allWindows.count) (visible + minimized)")
 
         var matchedWindowIDs: Set<CGWindowID> = []
         var restoredCount = 0
 
         for entry in workspace.windows {
-            // Find matching window
-            guard let matchedWindow = findMatchingWindow(
+            // Find matching window from ALL windows (visible + minimized)
+            guard let (matchedWindow, currentlyMinimized) = findMatchingWindow(
                 for: entry,
-                from: currentWindows,
+                from: allWindows,
                 excluding: matchedWindowIDs
             ) else {
                 log.info("⚠️ No match for '\(entry.appName ?? entry.bundleIdentifier)' (\(entry.windowTitle ?? "no title"))")
@@ -148,31 +182,45 @@ enum WorkspaceManager {
 
             matchedWindowIDs.insert(matchedWindow.cgWindowID)
 
-            // Always use proportional frame → works across any resolution
-            guard let screen = ScreenUtility.screenContaining(matchedWindow) ?? NSScreen.main else {
-                log.info("⚠️ Cannot find screen for \(matchedWindow.description)")
-                continue
-            }
+            if entry.isMinimized {
+                // Window should be minimized in this workspace
+                if !currentlyMinimized {
+                    log.info("Minimizing '\(entry.appName ?? entry.bundleIdentifier)'")
+                    matchedWindow.minimized = true
+                } else {
+                    log.info("Already minimized: '\(entry.appName ?? entry.bundleIdentifier)'")
+                }
+            } else {
+                // Window should be visible in this workspace
+                if currentlyMinimized {
+                    log.info("Unminimizing '\(entry.appName ?? entry.bundleIdentifier)'")
+                    matchedWindow.minimized = false
+                    // Small delay for window to appear on screen before setting frame
+                    usleep(200_000) // 200ms
+                }
 
-            let screenFrame = screen.cgSafeScreenFrame
-            let targetFrame = CGRect(
-                x: screenFrame.minX + entry.proportionalFrame.minX * screenFrame.width,
-                y: screenFrame.minY + entry.proportionalFrame.minY * screenFrame.height,
-                width: entry.proportionalFrame.width * screenFrame.width,
-                height: entry.proportionalFrame.height * screenFrame.height
-            )
+                // Calculate target frame from proportional
+                guard let screen = NSScreen.main else { continue }
 
-            let currentFrame = matchedWindow.frame
-            log.info("Restoring '\(entry.appName ?? entry.bundleIdentifier)': \(currentFrame) → \(targetFrame)")
+                let screenFrame = screen.cgSafeScreenFrame
+                let targetFrame = CGRect(
+                    x: screenFrame.minX + entry.proportionalFrame.minX * screenFrame.width,
+                    y: screenFrame.minY + entry.proportionalFrame.minY * screenFrame.height,
+                    width: entry.proportionalFrame.width * screenFrame.width,
+                    height: entry.proportionalFrame.height * screenFrame.height
+                )
 
-            // Set frame with sizeFirst=true for reliable positioning
-            matchedWindow.setFrame(targetFrame, sizeFirst: true)
+                let currentFrame = matchedWindow.frame
+                log.info("Restoring '\(entry.appName ?? entry.bundleIdentifier)': \(currentFrame) → \(targetFrame)")
 
-            // Verify the result
-            let actualFrame = matchedWindow.frame
-            if !actualFrame.approximatelyEqual(to: targetFrame, tolerance: 5) {
-                log.info("⚠️ Frame mismatch: expected \(targetFrame), got \(actualFrame) — retrying")
                 matchedWindow.setFrame(targetFrame, sizeFirst: true)
+
+                // Verify and retry
+                let actualFrame = matchedWindow.frame
+                if !actualFrame.approximatelyEqual(to: targetFrame, tolerance: 5) {
+                    log.info("⚠️ Frame mismatch: expected \(targetFrame), got \(actualFrame) — retrying")
+                    matchedWindow.setFrame(targetFrame, sizeFirst: true)
+                }
             }
 
             restoredCount += 1
@@ -232,7 +280,61 @@ enum WorkspaceManager {
         return screens.sorted().joined(separator: "|")
     }
 
-    /// Finds a matching window for a saved workspace entry.
+    /// Gets ALL windows from ALL running applications, including minimized ones.
+    ///
+    /// Uses AXUIElement to enumerate windows per app, which includes minimized windows
+    /// that CGWindowListCopyWindowInfo(.optionOnScreenOnly) would miss.
+    ///
+    /// - Returns: Array of (Window, isMinimized) tuples
+    private static func getAllWindows() -> [(Window, Bool)] {
+        var result: [(Window, Bool)] = []
+
+        for app in NSWorkspace.shared.runningApplications {
+            guard app.activationPolicy == .regular else { continue }
+            guard app.bundleIdentifier != Bundle.main.bundleIdentifier else { continue }
+
+            let appElement = AXUIElementCreateApplication(app.processIdentifier)
+
+            var windowsRef: CFTypeRef?
+            let axError = AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef)
+
+            guard axError == .success,
+                  let windowElements = windowsRef as? [AXUIElement] else {
+                continue
+            }
+
+            for element in windowElements {
+                guard let window = try? Window(element: element) else { continue }
+
+                // Check if standard window (has a title or is resizable)
+                let title = window.title
+                let hasTitle = title != nil && !title!.isEmpty
+
+                // Skip utility/panel windows
+                var roleRef: CFTypeRef?
+                AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &roleRef)
+                let role = roleRef as? String
+                if role != "AXWindow" { continue }
+
+                // Check subrole — skip dialogs, popovers, etc.
+                var subroleRef: CFTypeRef?
+                AXUIElementCopyAttributeValue(element, kAXSubroleAttribute as CFString, &subroleRef)
+                let subrole = subroleRef as? String
+                if subrole != "AXStandardWindow" && subrole != nil { continue }
+
+                let isMinimized = window.minimized
+
+                // Only include windows that have a title or are visible
+                if hasTitle || !isMinimized {
+                    result.append((window, isMinimized))
+                }
+            }
+        }
+
+        return result
+    }
+
+    /// Finds a matching window for a saved workspace entry from all windows (visible + minimized).
     ///
     /// Matching priority:
     /// 1. Same bundleIdentifier + same windowTitle
@@ -240,23 +342,23 @@ enum WorkspaceManager {
     ///
     /// - Parameters:
     ///   - entry: The saved window entry to match.
-    ///   - windows: Available windows to match against.
+    ///   - allWindows: All available windows with minimize state.
     ///   - excluding: Window IDs already matched (to avoid double-matching).
-    /// - Returns: The best matching window, if found.
+    /// - Returns: The best matching (Window, currentlyMinimized) tuple, if found.
     private static func findMatchingWindow(
         for entry: WorkspaceWindowEntry,
-        from windows: [Window],
+        from allWindows: [(Window, Bool)],
         excluding matchedIDs: Set<CGWindowID>
-    ) -> Window? {
-        let candidates = windows.filter { window in
+    ) -> (Window, Bool)? {
+        let candidates = allWindows.filter { (window, _) in
             !matchedIDs.contains(window.cgWindowID)
                 && window.nsRunningApplication?.bundleIdentifier == entry.bundleIdentifier
         }
 
         // Priority 1: Match by title
         if let titleMatch = entry.windowTitle,
-           let window = candidates.first(where: { $0.title == titleMatch }) {
-            return window
+           let match = candidates.first(where: { $0.0.title == titleMatch }) {
+            return match
         }
 
         // Priority 2: First unmatched window with same bundle ID

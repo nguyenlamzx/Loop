@@ -28,6 +28,9 @@ struct WorkspaceWindowEntry: Codable, Defaults.Serializable, Hashable {
 
     /// The name of the application for display purposes
     let appName: String?
+
+    /// Whether the window was minimized when the workspace was saved
+    let isMinimized: Bool
 }
 
 /// Represents a complete workspace layout
