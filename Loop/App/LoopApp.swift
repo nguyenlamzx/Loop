@@ -14,7 +14,7 @@ struct LoopApp: App {
     @ObservedObject private var updater = Updater.shared
     @Default(.hideMenuBarIcon) var hideMenuBarIcon
     @Default(.enableWorkspaces) var enableWorkspaces
-    @Default(.savedWorkspaces) var savedWorkspaces
+    @Default(.savedLayouts) var savedLayouts
 
     var body: some Scene {
         MenuBarExtra(Bundle.main.appName, image: "menubarIcon", isInserted: Binding.constant(!hideMenuBarIcon)) {
@@ -61,19 +61,28 @@ struct LoopApp: App {
             if enableWorkspaces {
                 Divider()
 
-                Button("Save Workspace…") {
-                    // Dispatch async so the menu closes before the dialog appears
+                Button("Save Layout…") {
                     DispatchQueue.main.async {
-                        promptAndSaveWorkspace()
+                        promptAndSaveLayout()
                     }
                 }
 
-                if !savedWorkspaces.isEmpty {
-                    Menu("Restore Workspace") {
-                        ForEach(savedWorkspaces) { workspace in
-                            Button("\(workspace.name) (\(workspace.windows.count) windows)") {
+                if !savedLayouts.isEmpty {
+                    Menu("Apply Layout") {
+                        ForEach(savedLayouts) { layout in
+                            Button("\(layout.name) (\(layout.zoneDescription))") {
                                 DispatchQueue.main.async {
-                                    WorkspaceManager.restoreWorkspace(workspace)
+                                    LayoutOverlayController.shared.show(layout: layout)
+                                }
+                            }
+                        }
+
+                        Divider()
+
+                        Menu("Delete Layout") {
+                            ForEach(savedLayouts) { layout in
+                                Button("Delete \(layout.name)") {
+                                    LayoutManager.deleteLayout(id: layout.id)
                                 }
                             }
                         }
@@ -91,19 +100,18 @@ struct LoopApp: App {
         .menuBarExtraStyle(.menu)
     }
 
-    private func promptAndSaveWorkspace() {
-        // Activate our app so the dialog appears in front
+    private func promptAndSaveLayout() {
         NSApp.activate(ignoringOtherApps: true)
 
         let alert = NSAlert()
-        alert.messageText = "Save Workspace"
-        alert.informativeText = "Enter a name for this workspace layout:"
+        alert.messageText = "Save Layout"
+        alert.informativeText = "Capture the current window arrangement as a reusable layout:"
         alert.addButton(withTitle: "Save")
         alert.addButton(withTitle: "Cancel")
 
         let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 250, height: 24))
-        textField.placeholderString = "My Workspace"
-        textField.stringValue = "Workspace \(savedWorkspaces.count + 1)"
+        textField.placeholderString = "My Layout"
+        textField.stringValue = "Layout \(savedLayouts.count + 1)"
         alert.accessoryView = textField
 
         alert.window.initialFirstResponder = textField
@@ -112,7 +120,7 @@ struct LoopApp: App {
         if response == .alertFirstButtonReturn {
             let name = textField.stringValue.trimmingCharacters(in: .whitespaces)
             if !name.isEmpty {
-                WorkspaceManager.saveCurrentWorkspace(name: name)
+                LayoutManager.captureLayout(name: name)
             }
         }
     }
